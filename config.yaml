@@ -1,0 +1,82 @@
+# Azure OpenAI Configuration
+azure_openai:
+  enabled: true
+  model: "gpt-4o"
+  api_version: "2024-02-15-preview"
+  temperature: 0
+  max_tokens: 4000
+  timeout: 60
+  retry_attempts: 3
+  retry_delay: 2
+
+# Search Engine Configuration
+search_engines:
+  primary: "duckduckgo"
+  fallbacks:
+    tavily:
+      enabled: false
+      api_key: ""  # Add your Tavily API key here
+    google:
+      enabled: false
+      api_key: ""  # Add your Google API key here
+      search_engine_id: ""  # Add your Google Search Engine ID here
+
+server:
+  host: "0.0.0.0"
+  port: 1337
+  debug: false
+
+frontend:
+  url: "http://localhost:3000"
+  allowed_origins:
+    - "http://localhost:3000"
+    - "https://localhost:3000"
+
+logging:
+  level: "INFO"
+  log_prompts: true
+  log_rest_api: true
+  log_file: "logs/app.log"
+
+# API Keys for LLM providers
+llm_providers:
+  openai:
+    api_key: ""
+  anthropic:
+    api_key: ""
+  google:
+    api_key: ""
+  mistral:
+    api_key: ""
+  groq:
+    api_key: ""
+  ollama:
+    endpoint: "http://localhost:11434"
+
+# DuckDuckGo specific settings
+duckduckgo:
+  request_delay: 1
+  max_retries: 3
+  timeout: 30
+  max_results: 5
+  user_agents:
+    - "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    - "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+  regions:
+    - "us-en"
+    - "uk-en"
+    - "au-en"
+  daily_request_limit: 1000
+  rate_limit_window: 3600  # 1 hour in seconds
+  rate_limit_max_requests: 100
+  backoff_factor: 2
+  max_backoff: 60  # Maximum backoff time in seconds
+
+# Storage Configuration
+storage:
+  sqlite_db: "data/agent.db"
+  screenshots_dir: "data/screenshots"
+  pdfs_dir: "data/pdfs"
+  projects_dir: "data/projects"
+  logs_dir: "logs"
+  repos_dir: "data/repos" 
