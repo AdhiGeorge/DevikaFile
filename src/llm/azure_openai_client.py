@@ -1,4 +1,5 @@
-from openai import AzureOpenAI
+import openai
+import asyncio
 from src.config import Config
 from src.logger import Logger
 
@@ -13,7 +14,7 @@ class AzureOpenAI:
         self.deployment_name = "gpt-4"  # Default deployment name
         
         try:
-            self.client = AzureOpenAI(
+            self.client = openai.AzureOpenAI(
                 api_key=self.api_key,
                 api_version=self.api_version,
                 azure_endpoint=self.api_base
@@ -23,17 +24,21 @@ class AzureOpenAI:
             log.error(f"Failed to initialize Azure OpenAI client: {str(e)}")
             raise
 
-    def inference(self, model_id: str, prompt: str) -> str:
+    async def inference(self, model_id: str, prompt: str) -> str:
         try:
-            chat_completion = self.client.chat.completions.create(
-                model=model_id,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt.strip(),
-                    }
-                ],
-                temperature=0
+            loop = asyncio.get_event_loop()
+            chat_completion = await loop.run_in_executor(
+                None,
+                lambda: self.client.chat.completions.create(
+                    model=model_id,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": prompt.strip(),
+                        }
+                    ],
+                    temperature=0
+                )
             )
             return chat_completion.choices[0].message.content
         except Exception as e:

@@ -249,3 +249,36 @@ class AgentOrchestrator:
             "variables": self.context.variables,
             "metadata": self.context.metadata
         }
+
+if __name__ == "__main__":
+    # Real, practical example usage of the AgentOrchestrator
+    try:
+        orchestrator = AgentOrchestrator()
+        # Example: User wants to build a FastAPI web server
+        messages = [
+            {"role": "user", "content": "Build a FastAPI web server that returns 'Hello, World!' on the root endpoint."}
+        ]
+        context_variables = {
+            "research_needed": True,
+            "code_generation_needed": True,
+            "execution_needed": True,
+            "errors_found": False,
+            "task_completed": False
+        }
+        result = orchestrator.run(
+            start_agent="planner",
+            messages=messages,
+            context_variables=context_variables,
+            max_turns=6
+        )
+        print("\nOrchestration Result:")
+        print(f"State: {result['state']}")
+        print(f"Turn Count: {result['metadata'].get('turn_count')}")
+        print("Messages:")
+        for msg in result["messages"]:
+            print(f"  {msg}")
+        print("Context Variables:")
+        for k, v in result["context_variables"].items():
+            print(f"  {k}: {v}")
+    except Exception as e:
+        print(f"Error in orchestrator example: {str(e)}")

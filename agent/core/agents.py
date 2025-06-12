@@ -128,3 +128,35 @@ class AgentManager:
             "agent": response.agent.name,
             "context_variables": response.context_variables
         }
+
+if __name__ == "__main__":
+    # Real, practical example usage of the AgentManager
+    try:
+        manager = AgentManager()
+        # Example: User wants to create a project plan for a REST API
+        messages = [
+            {"role": "user", "content": "Create a project plan for a REST API that manages a todo list."}
+        ]
+        context_variables = {
+            "research_needed": True,
+            "code_generation_needed": True,
+            "execution_needed": False,
+            "errors_found": False,
+            "task_completed": False
+        }
+        # Run the planner agent
+        result = manager.run(
+            agent_name="planner",
+            messages=messages,
+            context_variables=context_variables
+        )
+        print("\nAgentManager Result:")
+        print(f"Agent: {result['agent']}")
+        print("Messages:")
+        for msg in result["messages"]:
+            print(f"  {msg}")
+        print("Context Variables:")
+        for k, v in result["context_variables"].items():
+            print(f"  {k}: {v}")
+    except Exception as e:
+        print(f"Error in agent manager example: {str(e)}")

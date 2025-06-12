@@ -57,9 +57,6 @@ class Config:
     def get_google_search_api_endpoint(self):
         return self.config["API_ENDPOINTS"]["GOOGLE"]
 
-    def get_ollama_api_endpoint(self):
-        return self.config["API_ENDPOINTS"]["OLLAMA"]
-    
     def get_lmstudio_api_endpoint(self):
         return self.config["API_ENDPOINTS"]["LM_STUDIO"]
 
@@ -131,10 +128,6 @@ class Config:
         self.config["API_ENDPOINTS"]["GOOGLE_SEARCH"] = endpoint
         self.save_config()
 
-    def set_ollama_api_endpoint(self, endpoint):
-        self.config["API_ENDPOINTS"]["OLLAMA"] = endpoint
-        self.save_config()
-    
     def set_lmstudio_api_endpoint(self, endpoint):
         self.config["API_ENDPOINTS"]["LM_STUDIO"] = endpoint
         self.save_config()

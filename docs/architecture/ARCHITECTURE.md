@@ -26,18 +26,95 @@ Devika is an advanced AI software engineer that can understand high-level human 
 
 ## Overview
 
-At a high level, Devika consists of the following key components:
+Agent is a modern, async, and scalable agent orchestration framework. It leverages state-of-the-art language models like **Claude** and **GPT-4** for natural language understanding, generation, and reasoning.
 
-- **Agent Core**: Orchestrates the overall AI planning, reasoning and execution process. Communicates with various sub-agents.
-- **Agents**: Specialized sub-agents that handle specific tasks like planning, research, coding, patching, reporting etc.  
-- **Language Models**: Leverages large language models (LLMs) like Claude, GPT-4, GPT-3 for natural language understanding and generation.
-- **Browser Interaction**: Enables web browsing, information gathering, and interaction with web elements.
-- **Project Management**: Handles organization and persistence of project-related data. 
-- **Agent State Management**: Tracks and persists the dynamic state of the AI agent across interactions.
-- **Services**: Integrations with external services like GitHub, Netlify for enhanced capabilities.
-- **Utilities**: Supporting modules for configuration, logging, vector search, PDF generation etc.
+## Core Components
 
-Let's dive into each of these components in more detail.
+1. **User Interface**: A web-based chat interface for interacting with Agent, viewing project files, and monitoring the agent's state.
+2. **Core System**: The main application logic that coordinates between different components and manages the agent's workflow.
+3. **Large Language Models**: Agent leverages state-of-the-art language models like **Claude** and **GPT-4** for natural language understanding, generation, and reasoning.
+4. **Planning Module**: Responsible for breaking down complex tasks into manageable steps and creating execution plans.
+5. **Research Module**: Handles web searches and information gathering to support the development process.
+6. **Coding Module**: Generates and manages code based on the plan and research.
+7. **Execution Module**: Safely executes generated code in a controlled environment.
+8. **Knowledge Base**: Local Qdrant-based vector store for persistent knowledge.
+
+## Async/Await
+
+All agent and service methods are async for better performance. This includes:
+- LLM inference
+- Web search
+- Knowledge base operations
+- Agent orchestration
+
+## Caching
+
+In-memory caching is used for expensive operations:
+- Embeddings
+- Keyword extraction
+- Search results
+- LLM completions (where safe)
+
+## Rate Limiting
+
+In-memory rate limiting is implemented for API calls:
+- LLM API calls
+- Search API calls
+- Knowledge base operations
+
+## Error Handling & Retries
+
+Robust error handling and retry logic is implemented for all network/API calls:
+- Configurable retry counts
+- Exponential backoff
+- Detailed error logging
+
+## Monitoring
+
+- **Prometheus**: Metrics for API calls, errors, latency, etc.
+- **Logging**: Structured logging (JSON format).
+- **Tracing**: OpenTelemetry tracing for detailed execution flow.
+
+## Cost Tracking
+
+- Token and cost tracking for every LLM and search API call.
+- Aggregated cost reporting for the run/session.
+
+## Project Structure
+
+```
+.
+├── agent/                  # Core agent logic
+│   ├── core/               # Core agent modules (orchestrator, knowledge base)
+│   ├── utils/              # Utility functions
+│   ├── memory/             # Memory management
+│   ├── llm/                # LLM integration
+│   └── services/           # External service integrations
+├── src/                    # Source code
+│   ├── agents/             # Agent implementations
+│   ├── bert/               # BERT/KeyBERT for keyword extraction
+│   ├── browser/            # Web search and browser automation
+│   ├── llm/                # LLM client and inference
+│   ├── services/           # Service integrations
+│   └── utils/              # Utility functions
+├── ui/                     # Web UI (Svelte)
+├── data/                   # Data storage (cache, logs, projects)
+├── docs/                   # Documentation
+├── tests/                  # Unit and integration tests
+├── config.yaml             # Configuration file
+├── .env                    # Environment variables (API keys)
+├── requirements.txt        # Python dependencies
+└── README.md               # This file
+```
+
+## Configuration
+
+- **API Keys**: Store all API keys in `.env`.
+- **Configurable Values**: All configurable values are in `config.yaml`.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Agent Core
 
@@ -131,7 +208,6 @@ Devika's natural language processing capabilities are driven by state-of-the-art
 
 - **Claude** (Anthropic): Claude models like claude-v1.3, claude-instant-v1.0 etc.
 - **GPT-4/GPT-3** (OpenAI): Models like gpt-4, gpt-3.5-turbo etc.
-- **Self-hosted models** (via [Ollama](https://ollama.com/)): Allows using open-source models in a self-hosted environment
 
 The `LLM` class abstracts out the specifics of each provider's API, allowing agents to interact with the models in a consistent way. It supports:
 - Listing available models

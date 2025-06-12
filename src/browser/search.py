@@ -11,19 +11,59 @@ import re
 import orjson
 from curl_cffi import requests as curl_requests
 from tenacity import retry, stop_after_attempt, wait_exponential, wait_random, retry_if_exception_type, before_sleep_log, RetryError, after_log
+import asyncio
+from functools import lru_cache
+from src.config import Config
+from src.utils.token_tracker import TokenTracker
+from datetime import datetime, timedelta
 
 # Set up logger
 logger = logging.getLogger(__name__)
 
+class AsyncCache:
+    def __init__(self, max_size=1000, ttl=3600):
+        self.cache = {}
+        self.max_size = max_size
+        self.ttl = ttl
+        self.lock = asyncio.Lock()
+
+    async def get(self, key):
+        async with self.lock:
+            entry = self.cache.get(key)
+            if entry and (time.time() - entry['time']) < self.ttl:
+                return entry['value']
+            if key in self.cache:
+                del self.cache[key]
+            return None
+
+    async def set(self, key, value):
+        async with self.lock:
+            if len(self.cache) >= self.max_size:
+                # Remove oldest
+                oldest = min(self.cache.items(), key=lambda x: x[1]['time'])[0]
+                del self.cache[oldest]
+            self.cache[key] = {'value': value, 'time': time.time()}
+
 class SearchEngine:
+    _cache = AsyncCache()
+    _rate_limit = {}
+    _config = Config()
+    _token_tracker = TokenTracker()
+
     def __init__(self):
-        self.config = self._load_config()
-        self.primary_engine = self.config['search_engines']['primary']
-        self.fallbacks = self.config['search_engines']['fallbacks']
+        self.config = self._config.get('search_engines', {})
+        self.primary_engine = self.config.get('primary', 'duckduckgo')
+        self.fallbacks = self.config.get('fallbacks', {})
+        self.ddg_config = self._config.get('duckduckgo', {})
+        self.requests_per_minute = self.ddg_config.get('rate_limit_max_requests', 60)
+        self.max_retries = self.ddg_config.get('max_retries', 3)
+        self.retry_delay = self.ddg_config.get('request_delay', 1)
+        self.backoff_factor = self.ddg_config.get('backoff_factor', 2)
+        self.timeout = self.ddg_config.get('timeout', 30)
+        self.pricing = self._config.get('search_engines', {}).get('pricing', {})
         self.query_result = None
         
         # DuckDuckGo specific settings
-        self.ddg_config = self.config.get('duckduckgo', {})
         self.request_delay = self.ddg_config.get('request_delay', 3.0)
         self.max_retries = self.ddg_config.get('max_retries', 5)
         self.timeout = self.ddg_config.get('timeout', 20)
@@ -137,42 +177,49 @@ class SearchEngine:
     def _random_jitter(self, base=1, deviation=2):
         return random.uniform(base, base + deviation)
 
-    def search(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
-        logger.info(f"Executing search for query: {query}")
-        
-        # Check daily request limit
-        if self.daily_request_count >= self.daily_request_limit:
-            logger.warning(f"Daily request limit of {self.daily_request_limit} reached.")
-            return self._generate_placeholder_results(query, max_results)
-            
-        # Check if we're in extended backoff period
-        if self._should_apply_extended_backoff():
-            remaining = int(self.extended_backoff_until - time.time())
-            logger.warning(f"In extended backoff period for {remaining}s.")
-            return self._generate_placeholder_results(query, max_results)
+    async def search(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+        cache_key = (self.primary_engine, query, max_results)
+        cached = await self._cache.get(cache_key)
+        if cached:
+            logger.info(f"Search cache hit for {cache_key}")
+            return cached
 
-        # Try primary engine first (DuckDuckGo)
-        try:
-            if self.primary_engine == "duckduckgo":
-                return self._duckduckgo_search(query, max_results)
-        except Exception as e:
-            logger.error(f"Primary search engine failed: {str(e)}")
+        # Rate limiting
+        now = datetime.utcnow()
+        window = now.replace(second=0, microsecond=0)
+        if self.primary_engine not in self._rate_limit:
+            self._rate_limit[self.primary_engine] = {}
+        if window not in self._rate_limit[self.primary_engine]:
+            self._rate_limit[self.primary_engine][window] = 0
+        if self._rate_limit[self.primary_engine][window] >= self.requests_per_minute:
+            logger.warning(f"Search rate limit exceeded for {self.primary_engine}")
+            await asyncio.sleep(60)
+        self._rate_limit[self.primary_engine][window] += 1
 
-        # Try fallback engines if primary fails
-        for engine, config in self.fallbacks.items():
-            if config['enabled']:
-                try:
-                    if engine == "tavily":
-                        return self._tavily_search(query, config['api_key'], max_results)
-                    elif engine == "google":
-                        return self._google_search(query, config['api_key'], config['search_engine_id'], max_results)
-                except Exception as e:
-                    logger.error(f"Fallback engine {engine} failed: {str(e)}")
-                    continue
+        # Error handling and retries
+        attempt = 0
+        while attempt < self.max_retries:
+            try:
+                if self.primary_engine == "duckduckgo":
+                    results = await self._duckduckgo_search(query, max_results)
+                else:
+                    raise Exception(f"Unsupported search engine: {self.primary_engine}")
+                await self._cache.set(cache_key, results)
+                # Cost tracking (approximate)
+                self._token_tracker.track_usage(
+                    self.primary_engine,
+                    query,
+                    str(results),
+                    {"type": "search", "engine": self.primary_engine}
+                )
+                return results
+            except Exception as e:
+                logger.error(f"Search error: {str(e)} (attempt {attempt+1})")
+                await asyncio.sleep(self.retry_delay * (self.backoff_factor ** attempt))
+                attempt += 1
+        raise RuntimeError(f"Search failed after {self.max_retries} attempts")
 
-        raise Exception("All search engines failed")
-
-    def _duckduckgo_search(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
+    async def _duckduckgo_search(self, query: str, max_results: int = 10) -> List[Dict[str, Any]]:
         session = curl_requests.Session(impersonate="chrome", allow_redirects=False)
         session.headers["Referer"] = "https://duckduckgo.com/"
 

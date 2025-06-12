@@ -76,3 +76,18 @@ def route_logger(logger: Logger):
             return response
         return wrapper
     return decorator
+
+
+if __name__ == "__main__":
+    # Real, practical example usage of the Logger
+    try:
+        logger = Logger()
+        logger.info("This is an info message.")
+        logger.warning("This is a warning message.")
+        logger.error("This is an error message.")
+        logger.debug("This is a debug message.")
+        logger.exception("This is an exception message.")
+        print("Log file content:")
+        print(logger.read_log_file())
+    except Exception as e:
+        print(f"Error in logger example: {str(e)}")

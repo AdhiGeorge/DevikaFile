@@ -174,3 +174,35 @@ class ProjectManager:
                 except Exception as e:
                     print(f"Error reading file {filename}: {e}")
         return files
+
+
+if __name__ == "__main__":
+    # Real, practical example usage of the ProjectManager
+    try:
+        pm = ProjectManager()
+        project_name = "Todo List API"
+        # Create a new project
+        pm.create_project(project_name)
+        print(f"Created project: {project_name}")
+        # Add a message from the user
+        pm.add_message_from_user(project_name, "I want to manage todos with a REST API.")
+        # Add a message from the agent
+        pm.add_message_from_agent(project_name, "Sure! Let's start by designing the endpoints.")
+        # Retrieve all messages
+        messages = pm.get_messages(project_name)
+        print("\nAll Messages:")
+        for msg in messages:
+            print(msg)
+        # Get formatted messages
+        formatted = pm.get_all_messages_formatted(project_name)
+        print("\nFormatted Messages:")
+        for line in formatted:
+            print(line)
+        # Get project files (will be empty unless files exist)
+        files = pm.get_project_files(project_name)
+        print(f"\nProject Files: {files}")
+        # Clean up: delete the project
+        pm.delete_project(project_name)
+        print(f"Deleted project: {project_name}")
+    except Exception as e:
+        print(f"Error in project manager example: {str(e)}")

@@ -29,9 +29,23 @@ import time
 import platform
 import tiktoken
 import asyncio
+import logging
+from src.llm.llm import LLM
+from src.utils.token_tracker import TokenTracker
+from prometheus_client import Counter, Histogram, start_http_server
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from src.socket_instance import emit_agent
 
+logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
+
+# Prometheus metrics
+LLM_CALLS = Counter('llm_calls_total', 'Total number of LLM calls', ['model'])
+SEARCH_CALLS = Counter('search_calls_total', 'Total number of search calls', ['engine'])
+LLM_LATENCY = Histogram('llm_latency_seconds', 'LLM call latency in seconds', ['model'])
+SEARCH_LATENCY = Histogram('search_latency_seconds', 'Search call latency in seconds', ['engine'])
 
 class Agent:
     def __init__(self, base_model: str, search_engine: str, browser: Browser = None):
@@ -65,6 +79,9 @@ class Agent:
         self.agent_state = AgentState()
         self.engine = search_engine
         self.tokenizer = tiktoken.get_encoding("cl100k_base")
+        self.llm = LLM()
+        self.search_engine = SearchEngine()
+        self.token_tracker = TokenTracker()
 
     async def open_page(self, project_name, url):
         browser = await Browser().start()
@@ -76,40 +93,58 @@ class Agent:
 
         return browser, raw, data
 
-    def search_queries(self, queries: list, project_name: str) -> dict:
-        results = {}
-        knowledge_base = KnowledgeBase()
-        web_search = SearchEngine()
-        self.logger.info(f"\nSearch Engine :: {web_search.primary_engine}")
+    async def execute(self, prompt: str, project_name: str) -> str:
+        with tracer.start_as_current_span("agent_execute") as span:
+            span.set_attribute("prompt", prompt)
+            try:
+                start_time = time.time()
+                response = await self.llm.inference(prompt, project_name)
+                latency = time.time() - start_time
+                LLM_CALLS.labels(model=self.llm.model_id).inc()
+                LLM_LATENCY.labels(model=self.llm.model_id).observe(latency)
+                span.set_status(Status(StatusCode.OK))
+                return response
+            except Exception as e:
+                logger.error(f"Agent execution error: {str(e)}")
+                span.set_status(Status(StatusCode.ERROR, str(e)))
+                raise
 
-        for query in queries:
-            query = query.strip().lower()
+    async def search_queries(self, queries: list, project_name: str) -> dict:
+        with tracer.start_as_current_span("agent_search_queries") as span:
+            span.set_attribute("queries", json.dumps(queries))
+            results = {}
+            knowledge_base = KnowledgeBase()
+            web_search = SearchEngine()
+            self.logger.info(f"\nSearch Engine :: {web_search.primary_engine}")
 
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            for query in queries:
+                query = query.strip().lower()
 
-            web_search.search(query)
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
 
-            link = web_search.get_first_link()
-            print("\nLink :: ", link, '\n')
-            if not link:
-                continue
-            browser, raw, data = loop.run_until_complete(self.open_page(project_name, link))
-            emit_agent("screenshot", {"data": raw, "project_name": project_name}, False)
-            results[query] = self.formatter.execute(data, project_name)
+                web_search.search(query)
 
-            self.logger.info(f"got the search results for : {query}")
-        return results
+                link = web_search.get_first_link()
+                print("\nLink :: ", link, '\n')
+                if not link:
+                    continue
+                browser, raw, data = loop.run_until_complete(self.open_page(project_name, link))
+                emit_agent("screenshot", {"data": raw, "project_name": project_name}, False)
+                results[query] = self.formatter.execute(data, project_name)
+
+                self.logger.info(f"got the search results for : {query}")
+            span.set_status(Status(StatusCode.OK))
+            return results
 
     def update_contextual_keywords(self, sentence: str):
-        """
-            Update the context keywords with the latest sentence/prompt
-        """
-        keywords = SentenceBert(sentence).extract_keywords()
-        for keyword in keywords:
-            self.collected_context_keywords.append(keyword[0])
-
-        return self.collected_context_keywords
+        with tracer.start_as_current_span("update_contextual_keywords") as span:
+            span.set_attribute("sentence", sentence)
+            keywords = SentenceBert(sentence).extract_keywords()
+            for keyword in keywords:
+                self.collected_context_keywords.append(keyword[0])
+            span.set_status(Status(StatusCode.OK))
+            return self.collected_context_keywords
 
     def make_decision(self, prompt: str, project_name: str) -> str:
         decision = self.decision.execute(prompt, project_name)
@@ -252,100 +287,3 @@ class Agent:
 
         self.agent_state.set_agent_active(project_name, False)
         self.agent_state.set_agent_completed(project_name, True)
-
-    def execute(self, prompt: str, project_name: str) -> str:
-        """
-        Agentic flow of execution
-        """
-        if project_name:
-            self.project_manager.add_message_from_agent(project_name, prompt)
-
-        self.agent_state.create_state(project=project_name)
-
-        plan = self.planner.execute(prompt, project_name)
-        print("\nplan :: ", plan, '\n')
-
-        planner_response = self.planner.parse_response(plan)
-        reply = planner_response["reply"]
-        focus = planner_response["focus"]
-        plans = planner_response["plans"]
-        summary = planner_response["summary"]
-
-        self.project_manager.add_message_from_agent(project_name, reply)
-        self.project_manager.add_message_from_agent(project_name, json.dumps(plans, indent=4))
-        # self.project_manager.add_message_from_agent(project_name, f"In summary: {summary}")
-
-        self.update_contextual_keywords(focus)
-        print("\ncontext_keywords :: ", self.collected_context_keywords, '\n')
-
-        internal_monologue = self.internal_monologue.execute(current_prompt=plan, project_name=project_name)
-        print("\ninternal_monologue :: ", internal_monologue, '\n')
-
-        new_state = self.agent_state.new_state()
-        new_state["internal_monologue"] = internal_monologue
-        self.agent_state.add_to_current_state(project_name, new_state)
-
-        research = self.researcher.execute(plan, self.collected_context_keywords, project_name=project_name)
-        print("\nresearch :: ", research, '\n')
-
-        queries = research["queries"]
-        queries_combined = ", ".join(queries)
-        ask_user = research["ask_user"]
-
-        if (queries and len(queries) > 0) or ask_user != "":
-            self.project_manager.add_message_from_agent(
-                project_name,
-                f"I am browsing the web to research the following queries: {queries_combined}."
-                f"\n If I need anything, I will make sure to ask you."
-            )
-        if not queries and len(queries) == 0:
-            self.project_manager.add_message_from_agent(
-                project_name,
-                "I think I can proceed without searching the web."
-            )
-
-        ask_user_prompt = "Nothing from the agent."
-
-        if ask_user != "" and ask_user is not None:
-            self.project_manager.add_message_from_agent(project_name, ask_user)
-            self.agent_state.set_agent_active(project_name, False)
-            got_user_query = False
-
-            while not got_user_query:
-                self.logger.info("Waiting for agent query...")
-
-                latest_message_from_agent = self.project_manager.get_latest_message_from_agent(project_name)
-                validate_last_message_is_from_agent = self.project_manager.validate_last_message_is_from_agent(
-                    project_name)
-
-                if latest_message_from_agent and validate_last_message_is_from_agent:
-                    ask_user_prompt = latest_message_from_agent["message"]
-                    got_user_query = True
-                    self.project_manager.add_message_from_agent(project_name, "Thanks! 🙌")
-                time.sleep(5)
-
-        self.agent_state.set_agent_active(project_name, True)
-
-        if queries and len(queries) > 0:
-            search_results = self.search_queries(queries, project_name)
-
-        else:
-            search_results = {}
-
-        code = self.coder.execute(
-            step_by_step_plan=plan,
-            user_context=ask_user_prompt,
-            search_results=search_results,
-            project_name=project_name
-        )
-        print("\ncode :: ", code, '\n')
-
-        self.coder.save_code_to_project(code, project_name)
-
-        self.agent_state.set_agent_active(project_name, False)
-        self.agent_state.set_agent_completed(project_name, True)
-        self.project_manager.add_message_from_agent(
-            project_name,
-            "I have completed the my task. \n"
-            "if you would like me to do anything else, please let me know. \n"
-        )

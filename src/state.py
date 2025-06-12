@@ -174,4 +174,36 @@ class AgentState:
             if agent_state:
                 return json.loads(agent_state.state_stack_json)[-1]["token_usage"]
             return 0
+
+if __name__ == "__main__":
+    # Real, practical example usage of the AgentState
+    try:
+        sm = AgentState()
+        project_name = "Test Project"
+        # Create a new state for the project
+        sm.create_state(project_name)
+        print(f"Created state for project: {project_name}")
+        # Add a new state
+        new_state = sm.new_state()
+        new_state["internal_monologue"] = "Working on the first step."
+        sm.add_to_current_state(project_name, new_state)
+        print("Added a new state.")
+        # Retrieve the current state stack
+        state_stack = sm.get_current_state(project_name)
+        print("\nCurrent State Stack:")
+        for state in state_stack:
+            print(state)
+        # Update the latest state
+        latest = sm.get_latest_state(project_name)
+        latest["internal_monologue"] = "Step completed."
+        sm.update_latest_state(project_name, latest)
+        print("Updated the latest state.")
+        # Mark agent as completed
+        sm.set_agent_completed(project_name, True)
+        print("Marked agent as completed.")
+        # Clean up: delete the state
+        sm.delete_state(project_name)
+        print(f"Deleted state for project: {project_name}")
+    except Exception as e:
+        print(f"Error in state manager example: {str(e)}")
         

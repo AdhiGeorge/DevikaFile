@@ -9,6 +9,7 @@ from datetime import datetime
 import json
 import numpy as np
 from sentence_transformers import SentenceTransformer
+import openai
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -22,14 +23,22 @@ class KnowledgeBase:
         """Initialize the knowledge base with Qdrant and embedding model."""
         # Get configuration from environment
         self.qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
-        self.embedding_model_name = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+        self.embedding_model_name = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
         self.collection_name = os.getenv("QDRANT_COLLECTION", "agent_knowledge")
+        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not self.openai_api_key:
+            raise ValueError("OPENAI_API_KEY must be set in your .env file.")
         
         # Initialize Qdrant client
         self.client = QdrantClient(url=self.qdrant_url)
         
-        # Initialize embedding model
-        self.embedding_model = SentenceTransformer(self.embedding_model_name)
+        # Initialize embedding model based on configuration
+        if self.embedding_model_name == "text-embedding-3-small":
+            self.use_openai = True
+            self.vector_size = 1536  # text-embedding-3-small
+        else:
+            self.use_openai = False
+            self.embedding_model = SentenceTransformer(self.embedding_model_name)
         
         # Ensure collection exists
         self._ensure_collection()
@@ -44,7 +53,7 @@ class KnowledgeBase:
             
             if self.collection_name not in collection_names:
                 # Create collection with vector size from the embedding model
-                vector_size = self.embedding_model.get_sentence_embedding_dimension()
+                vector_size = self.vector_size if self.use_openai else self.embedding_model.get_sentence_embedding_dimension()
                 
                 self.client.create_collection(
                     collection_name=self.collection_name,
@@ -60,9 +69,19 @@ class KnowledgeBase:
 
     def _get_embedding(self, text: str) -> List[float]:
         """Get embedding for a text using the configured model."""
+        if not text or not isinstance(text, str):
+            raise ValueError("Text for embedding must be a non-empty string.")
         try:
-            embedding = self.embedding_model.encode(text)
-            return embedding.tolist()
+            if self.use_openai:
+                response = openai.Embedding.create(
+                    input=text,
+                    model=self.embedding_model_name,
+                    api_key=self.openai_api_key
+                )
+                return response['data'][0]['embedding']
+            else:
+                embedding = self.embedding_model.encode(text)
+                return embedding.tolist()
         except Exception as e:
             logger.error(f"Error generating embedding: {str(e)}")
             raise
@@ -82,6 +101,8 @@ class KnowledgeBase:
         Returns:
             The ID of the added document
         """
+        if not text or not isinstance(metadata, dict):
+            raise ValueError("Text and metadata are required.")
         try:
             # Generate embedding
             vector = self._get_embedding(text)
@@ -131,6 +152,8 @@ class KnowledgeBase:
         Returns:
             List of matching documents with their metadata and scores
         """
+        if not query:
+            raise ValueError("Query must be a non-empty string.")
         try:
             # Generate query embedding
             query_vector = self._get_embedding(query)
@@ -168,6 +191,8 @@ class KnowledgeBase:
         Returns:
             The document metadata if found, None otherwise
         """
+        if not document_id:
+            raise ValueError("Document ID is required.")
         try:
             result = self.client.retrieve(
                 collection_name=self.collection_name,
@@ -192,6 +217,8 @@ class KnowledgeBase:
         Returns:
             True if successful, False otherwise
         """
+        if not document_id:
+            raise ValueError("Document ID is required.")
         try:
             self.client.delete(
                 collection_name=self.collection_name,
@@ -221,6 +248,8 @@ class KnowledgeBase:
         Returns:
             True if successful, False otherwise
         """
+        if not document_id:
+            raise ValueError("Document ID is required.")
         try:
             # Get existing document
             existing = self.get_document(document_id)
@@ -274,7 +303,7 @@ class KnowledgeBase:
                         must=[
                             models.FieldCondition(
                                 key="timestamp",
-                                match=models.MatchAny()
+                                match=models.MatchAny(any=["*"])
                             )
                         ]
                     )
@@ -286,3 +315,56 @@ class KnowledgeBase:
         except Exception as e:
             logger.error(f"Error clearing collection: {str(e)}")
             return False
+
+if __name__ == "__main__":
+    # Real, practical example usage
+    try:
+        # Initialize knowledge base
+        kb = KnowledgeBase()
+        
+        # Example document about Python async programming
+        doc_text = """
+        Asynchronous programming in Python allows you to write concurrent code that can handle multiple tasks efficiently.
+        The asyncio library provides the infrastructure for writing single-threaded concurrent code using coroutines,
+        multiplexing I/O access over sockets and other resources, running network clients and servers, and other related
+        primitives.
+        """
+        
+        # Add document with metadata
+        doc_id = kb.add_document(
+            text=doc_text,
+            metadata={
+                "title": "Python Async Programming",
+                "category": "Programming",
+                "tags": ["python", "async", "asyncio", "concurrency"]
+            }
+        )
+        print(f"Added document with ID: {doc_id}")
+        
+        # Search for similar documents
+        query = "How to write concurrent code in Python?"
+        results = kb.search(query, limit=3)
+        
+        print("\nSearch Results:")
+        for result in results:
+            print(f"\nScore: {result['score']}")
+            print(f"Title: {result['metadata'].get('title')}")
+            print(f"Text: {result['metadata'].get('text', '')[:200]}...")
+        
+        # Update document
+        updated_text = doc_text + "\n\nKey features include async/await syntax, event loops, and coroutines."
+        kb.update_document(
+            document_id=doc_id,
+            text=updated_text,
+            metadata={"updated": True}
+        )
+        print("\nDocument updated successfully")
+        
+        # Retrieve updated document
+        updated_doc = kb.get_document(doc_id)
+        print("\nUpdated Document:")
+        print(f"Title: {updated_doc.get('title')}")
+        print(f"Text: {updated_doc.get('text', '')[:200]}...")
+        
+    except Exception as e:
+        print(f"Error in example: {str(e)}")
