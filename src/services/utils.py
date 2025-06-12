@@ -72,19 +72,9 @@ def validate_responses(func):
         except json.JSONDecodeError:
             pass
 
-        for line in response.splitlines():
-            try:
-                response = json.loads(line)
-                print("fourth", type(response))
-                args[1] = response
-                return func(*args, **kwargs)
-
-            except json.JSONDecodeError:
-                pass
-
-        # If all else fails, raise an exception
-        emit_agent("info", {"type": "error", "message": "Failed to parse response as JSON"})
-        # raise InvalidResponseError("Failed to parse response as JSON")
-        return False
+        # Fallback: treat *response* as plain text and wrap in expected structure.
+        fallback = {"response": response, "action": "answer"}
+        args[1] = fallback
+        return func(*args, **kwargs)
 
     return wrapper

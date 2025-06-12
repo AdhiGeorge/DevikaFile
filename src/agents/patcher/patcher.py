@@ -2,8 +2,7 @@ import os
 import time
 import json
 
-from jinja2 import Environment, BaseLoader
-from typing import List, Dict, Union
+from typing import List, Dict
 from src.socket_instance import emit_agent
 
 from src.config import Config
@@ -13,8 +12,6 @@ from src.services.utils import retry_wrapper, validate_responses
 from src.agents.base_agent import BaseAgent
 from agent.core.knowledge_base import KnowledgeBase
 
-PROMPT = open("src/agents/patcher/prompt.jinja2", "r").read().strip()
-
 class Patcher(BaseAgent):
     def __init__(self, base_model: str):
         super().__init__(base_model)
@@ -23,12 +20,12 @@ class Patcher(BaseAgent):
         
         self.llm = LLM(model_id=base_model)
 
-    def format_prompt(self, code: str, issue: str) -> str:
+    def format_prompt(self, conversation: list, code_markdown: str, commands: list, error :str, system_os: str) -> str:
         """Format the patcher prompt with the code and issue."""
         prompt_template = self.get_prompt("patcher")
         if not prompt_template:
             raise ValueError("Patcher prompt not found in prompts.yaml")
-        return super().format_prompt(prompt_template, code=code, issue=issue)
+        return super().format_prompt(prompt_template,conversation=conversation, code_markdown=code_markdown, commands=commands, error=error, system_os=system_os)
 
     @validate_responses
     def validate_response(self, response: str):
@@ -54,15 +51,7 @@ class Patcher(BaseAgent):
         error :str,
         system_os: str
     ) -> str:
-        env = Environment(loader=BaseLoader())
-        template = env.from_string(PROMPT)
-        return template.render(
-            conversation=conversation,
-            code_markdown=code_markdown,
-            commands=commands,
-            error=error,
-            system_os=system_os
-        )
+        return self.format_prompt(conversation, code_markdown, commands, error, system_os)
 
     def save_code_to_project(self, response: List[Dict[str, str]], project_name: str):
         file_path_dir = None

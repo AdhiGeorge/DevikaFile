@@ -38,7 +38,7 @@ browser_interaction: |
 
 # Planner Agent Prompt
 planner: |
-  You are an AI Software Engineer.
+  You are an AI Agentic Researcher.
 
   The user asked: {prompt}
 
@@ -81,7 +81,7 @@ researcher: |
 
   Write optimized search queries for each step of the plan, just like how you would write a Google search query. Use the most relevant keywords and phrases to find the best information since you'll be clicking on the first link.
 
-  also only ask for information if you think it's necessary, otherwise leave ask_user field empty.
+  Also only ask for information if you think it's necessary, otherwise leave ask_user field empty.
 
   Step-by-Step Plan:
   {step_by_step_plan}

@@ -19,6 +19,10 @@ class AgentState:
     def __init__(self):
         config = Config()
         sqlite_path = config.get_sqlite_db()
+        # Ensure the directory for the SQLite database exists
+        db_dir = os.path.dirname(sqlite_path)
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir, exist_ok=True)
         self.engine = create_engine(f"sqlite:///{sqlite_path}")
         SQLModel.metadata.create_all(self.engine)
 
@@ -206,4 +210,3 @@ if __name__ == "__main__":
         print(f"Deleted state for project: {project_name}")
     except Exception as e:
         print(f"Error in state manager example: {str(e)}")
-        

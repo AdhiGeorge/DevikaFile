@@ -1,16 +1,14 @@
-import sys
 import asyncio
-from functools import lru_cache
-from typing import List, Tuple
+from typing import Tuple
 
 from src.socket_instance import emit_agent
 from .azure_openai_client import AzureOpenAI
 from src.state import AgentState
 from src.config import Config
-from src.logger import Logger
 from src.utils.token_tracker import TokenTracker
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
+import tiktoken
 
 TIKTOKEN_ENC = tiktoken.get_encoding("cl100k_base")
 
@@ -42,12 +40,23 @@ class LLM:
         return self.models
 
     def model_enum(self, model_name: str) -> Tuple[str, str]:
-        model_dict = {
-            model[0]: (model_enum, model[1]) 
-            for model_enum, models in self.models.items() 
-            for model in models
-        }
-        return model_dict.get(model_name, (None, None))
+        """Return (provider_enum, internal_model_id) for *model_name*.
+
+        Accepts either the display name (e.g. "GPT-4o") or the internal ID
+        (e.g. "gpt-4o"), case-insensitive.
+        """
+        if not model_name:
+            return (None, None)
+
+        query = model_name.strip().lower()
+
+        for provider_enum, models in self.models.items():
+            for display_name, internal_id in models:
+                if query in {display_name.lower(), internal_id.lower()}:
+                    return provider_enum, internal_id
+
+        # Fallback: assume Azure OpenAI with the provided model_name
+        return ("AZURE_OPENAI", model_name)
 
     @staticmethod
     def update_global_token_usage(string: str, project_name: str):
@@ -57,14 +66,18 @@ class LLM:
         total = agentState.get_latest_token_usage(project_name) + token_usage
         emit_agent("tokens", {"token_usage": total})
 
-    async def inference(self, prompt: str, project_name: str) -> str:
+    # ------------------------------------------------------------------
+    # Public synchronous entrypoint – safe for normal (blocking) calls.
+    # Internally delegates to the async implementation.
+    # ------------------------------------------------------------------
+    async def ainference(self, prompt: str, project_name: str) -> str:
         cache_key = (self.model_id, prompt)
         if cache_key in self._cache:
             logger.info(f"LLM cache hit for {cache_key}")
             return self._cache[cache_key]
 
         # Rate limiting
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         window = now.replace(second=0, microsecond=0)
         if self.model_id not in self._rate_limit:
             self._rate_limit[self.model_id] = {}
@@ -99,3 +112,7 @@ class LLM:
                 await asyncio.sleep(retry_delay * (backoff_factor ** attempt))
                 attempt += 1
         raise RuntimeError(f"LLM inference failed after {max_retries} attempts")
+
+    def inference(self, prompt: str, project_name: str) -> str:
+        """Blocking helper for synchronous callers (runs its own event loop)."""
+        return asyncio.run(self.ainference(prompt, project_name))

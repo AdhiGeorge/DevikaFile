@@ -17,15 +17,32 @@ class Answer(BaseAgent):
     def validate_response(self, response: str):
         """Validate the response from the LLM."""
         try:
-            # The response should be a valid JSON string
-            data = json.loads(response)
+            # Allow decorator to have already parsed JSON into dict
+            if isinstance(response, dict):
+                data = response
+            else:
+                data = json.loads(response)
             if not isinstance(data, dict):
                 return False
-            if "answer" not in data or not isinstance(data["answer"], str):
-                return False
-            if "explanation" not in data or not isinstance(data["explanation"], str):
-                return False
-            return response
+
+            # If proper keys present, keep them. Otherwise, treat generic "response" key as answer.
+            if "answer" not in data:
+                # Fallback: whole text becomes answer, explanation empty
+                if "response" in data and isinstance(data["response"], str):
+                    data = {
+                        "answer": data["response"],
+                        "explanation": "",
+                        "metadata": {}
+                    }
+                else:
+                    return False
+
+            # Ensure explanation key exists
+            if "explanation" not in data:
+                data["explanation"] = ""
+
+            # Always return a JSON string downstream
+            return json.dumps(data)
         except json.JSONDecodeError:
             return False
 

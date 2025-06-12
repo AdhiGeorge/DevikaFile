@@ -17,10 +17,6 @@ A modern, async, and scalable agent orchestration framework leveraging state-of-
 .
 ├── agent/                  # Core agent logic
 │   ├── core/               # Core agent modules (orchestrator, knowledge base)
-│   ├── utils/              # Utility functions
-│   ├── memory/             # Memory management
-│   ├── llm/                # LLM integration
-│   └── services/           # External service integrations
 ├── src/                    # Source code
 │   ├── agents/             # Agent implementations
 │   ├── bert/               # BERT/KeyBERT for keyword extraction
@@ -219,3 +215,13 @@ from src.socket_instance import emit_agent
 
 emit_agent("test-channel", {"msg": "Hello from socket_instance!"}, log=True)
 ```
+
+
+Install Microsoft Visual C++ Build Tools:
+   Download and install the Microsoft C++ Build Tools
+
+   During installation, select "Desktop development with C++" workload
+   
+   Make sure to include the Windows 10 SDK and MSVC v143 - VS 2022 C++ x64/x86 build tools
+
+https://visualstudio.microsoft.com/visual-cpp-build-tools/

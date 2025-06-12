@@ -4,11 +4,9 @@ import os
 from src.services.terminal_runner import TerminalRunner
 from src.agents.patcher import Patcher
 from src.agents.base_agent import BaseAgent
+from src.llm import LLM
 from src.services.utils import retry_wrapper, validate_responses
 from agent.core.knowledge_base import KnowledgeBase
-
-PROMPT = open("src/agents/runner/prompt.jinja2", "r").read().strip()
-RERUNNER_PROMPT = open("src/agents/runner/rerunner.jinja2", "r").read().strip()
 
 class Runner(BaseAgent):
     def __init__(self, base_model: str):
@@ -17,26 +15,22 @@ class Runner(BaseAgent):
         self.terminal_runner = TerminalRunner()
         self.llm = LLM(model_id=base_model)
 
-    def format_prompt(self, code: str, context: str = "") -> str:
+    def format_prompt(self, conversation: str, code_markdown: str, system_os: str, commands: list, error: str) -> str:
         """Format the runner prompt with the code and context."""
         prompt_template = self.get_prompt("runner")
         if not prompt_template:
             raise ValueError("Runner prompt not found in prompts.yaml")
-        return super().format_prompt(prompt_template, code=code, context=context)
+        return super().format_prompt(prompt_template, conversation=conversation, code_markdown=code_markdown, system_os=system_os, commands=commands, error=error)
 
     def render(
         self,
         conversation: str,
         code_markdown: str,
-        system_os: str
+        system_os: str,
+        commands: list,
+        error: str
     ) -> str:
-        env = Environment(loader=BaseLoader())
-        template = env.from_string(PROMPT)
-        return template.render(
-            conversation=conversation,
-            code_markdown=code_markdown,
-            system_os=system_os,
-        )
+        return self.format_prompt(conversation, code_markdown, system_os, commands, error)
 
     def render_rerunner(
         self,
@@ -46,15 +40,7 @@ class Runner(BaseAgent):
         commands: list,
         error: str
     ):
-        env = Environment(loader=BaseLoader())
-        template = env.from_string(RERUNNER_PROMPT)
-        return template.render(
-            conversation=conversation,
-            code_markdown=code_markdown,
-            system_os=system_os,
-            commands=commands,
-            error=error
-        )
+        return self.format_prompt(conversation, code_markdown, system_os, commands, error)
 
     @validate_responses
     def validate_response(self, response: str):
@@ -90,9 +76,9 @@ class Runner(BaseAgent):
         return results
 
     @retry_wrapper
-    def execute(self, code: str, context: str = "", project_name: str = "") -> str:
+    def execute(self, conversation: str, code_markdown: str, system_os: str, commands: list, error: str, project_name: str = "") -> str:
         """Execute the runner agent."""
-        formatted_prompt = self.format_prompt(code, context)
+        formatted_prompt = self.format_prompt(conversation, code_markdown, system_os, commands, error)
         response = self.llm.inference(formatted_prompt, project_name)
         validated = self.validate_response(response)
         # Store in knowledge base if valid
@@ -100,7 +86,7 @@ class Runner(BaseAgent):
             kb = KnowledgeBase()
             kb.add_document(
                 text=validated,
-                metadata={"agent": "runner", "project_name": project_name, "code": code, "context": context}
+                metadata={"agent": "runner", "project_name": project_name, "conversation": conversation, "code_markdown": code_markdown, "system_os": system_os, "commands": commands, "error": error}
             )
         return validated
 

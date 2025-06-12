@@ -1,21 +1,14 @@
 import json
 from typing import List
 
-from jinja2 import Environment, BaseLoader
-
 from src.llm import LLM
 from src.services.utils import retry_wrapper, validate_responses
-from src.browser.search import BingSearch
 from src.agents.base_agent import BaseAgent
 from agent.core.knowledge_base import KnowledgeBase
-
-PROMPT = open("src/agents/researcher/prompt.jinja2").read().strip()
-
 
 class Researcher(BaseAgent):
     def __init__(self, base_model: str):
         super().__init__(base_model)
-        self.bing_search = BingSearch()
         self.llm = LLM(model_id=base_model)
 
     def format_prompt(self, plan: str) -> str:

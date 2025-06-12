@@ -2,8 +2,7 @@ import os
 import time
 import json
 
-from jinja2 import Environment, BaseLoader
-from typing import List, Dict, Union
+from typing import List, Dict
 
 from src.config import Config
 from src.llm import LLM
@@ -12,9 +11,6 @@ from src.services.utils import retry_wrapper, validate_responses
 from src.socket_instance import emit_agent
 from src.agents.base_agent import BaseAgent
 from agent.core.knowledge_base import KnowledgeBase
-
-PROMPT = open("src/agents/feature/prompt.jinja2", "r").read().strip()
-
 
 class Feature(BaseAgent):
     def __init__(self, base_model: str):
@@ -53,13 +49,7 @@ class Feature(BaseAgent):
         code_markdown: str,
         system_os: str
     ) -> str:
-        env = Environment(loader=BaseLoader())
-        template = env.from_string(PROMPT)
-        return template.render(
-            conversation=conversation,
-            code_markdown=code_markdown,
-            system_os=system_os
-        )
+        return self.format_prompt(  conversation=conversation, code_markdown=code_markdown, system_os=system_os)
 
     def save_code_to_project(self, response: List[Dict[str, str]], project_name: str):
         file_path_dir = None

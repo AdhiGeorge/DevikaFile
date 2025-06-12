@@ -2,9 +2,7 @@ import os
 import time
 import json
 
-from jinja2 import Environment, BaseLoader
-from typing import List, Dict, Union
-
+from typing import List, Dict
 from src.config import Config
 from src.llm import LLM
 from src.state import AgentState
@@ -14,8 +12,6 @@ from src.socket_instance import emit_agent
 from src.agents.base_agent import BaseAgent
 from agent.core.knowledge_base import KnowledgeBase
 
-PROMPT = open("src/agents/coder/prompt.jinja2", "r").read().strip()
-
 class Coder(BaseAgent):
     def __init__(self, base_model: str):
         super().__init__(base_model)
@@ -24,23 +20,17 @@ class Coder(BaseAgent):
         self.logger = Logger()
         self.llm = LLM(model_id=base_model)
 
-    def format_prompt(self, task: str, context: str = "") -> str:
+    def format_prompt(self, step_by_step_plan: str, user_context: str, search_results: dict) -> str:
         """Format the coder prompt with the task and context."""
         prompt_template = self.get_prompt("coder")
         if not prompt_template:
             raise ValueError("Coder prompt not found in prompts.yaml")
-        return super().format_prompt(prompt_template, task=task, context=context)
+        return super().format_prompt(prompt_template, step_by_step_plan=step_by_step_plan, user_context=user_context, search_results=search_results)
 
     def render(
         self, step_by_step_plan: str, user_context: str, search_results: dict
     ) -> str:
-        env = Environment(loader=BaseLoader())
-        template = env.from_string(PROMPT)
-        return template.render(
-            step_by_step_plan=step_by_step_plan,
-            user_context=user_context,
-            search_results=search_results,
-        )
+        return self.format_prompt(step_by_step_plan, user_context, search_results)
 
     @validate_responses
     def validate_response(self, response: str):
