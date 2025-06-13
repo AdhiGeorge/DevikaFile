@@ -10,6 +10,8 @@ A modern, async, and scalable agent orchestration framework leveraging state-of-
 - **Error Handling & Retries**: Robust error handling and retry logic for all network/API calls.
 - **Monitoring**: Prometheus metrics, structured logging, and OpenTelemetry tracing for detailed execution flow.
 - **Cost Tracking**: Token and cost tracking for every LLM and search API call, with aggregated cost reporting.
+- **All configuration lives in `config.yaml`**: All configuration lives in **`config.yaml`** (no `config.toml`).  You can override any setting via environment variables – see `src/config.py` for the mapping logic.
+- **Code is executed directly on your machine**: Code is executed **directly on your machine** by `TerminalRunner` – Docker or Firejail is **not** required.  Use your own shell utilities and system packages.
 
 ## Project Structure
 

@@ -1,5 +1,6 @@
 <script>
   import { onMount } from "svelte";
+  import { get } from "svelte/store";
   import { Terminal } from "@xterm/xterm";
   import { FitAddon } from "@xterm/addon-fit";
   import { agentState } from "$lib/store";
@@ -34,36 +35,52 @@
 
     fitAddon.fit();
 
-    let previousState = {};
+    let prevCommand = "";
+    let prevOutput = "";
 
-    agentState.subscribe((state) => {
-      if (state && state.terminal_session) {
-        let command = state.terminal_session.command || 'echo "Waiting..."';
-        let output = state.terminal_session.output || "Waiting...";
-        let title = state.terminal_session.title || "Terminal";
-
-        // Check if the current state is different from the previous state
-        if (
-          command !== previousState.command ||
-          output !== previousState.output ||
-          title !== previousState.title
-        ) {
-          // addCommandAndOutput(command, output, title);
-          if (title) {
-            document.getElementById("terminal-title").innerText = title;
-          }
-          terminal.reset();
-          terminal.write(`$ ${command}\r\n\r\n${output}\r\n`);
-          // Update the previous state
-          previousState = { command, output, title };
-        }
-      } else {
-        // Reset the terminal
+    function handleState(state) {
+      if (!state || !state.terminal_session) {
         terminal.reset();
+        prevCommand = "";
+        prevOutput = "";
+        return;
       }
 
-      fitAddon.fit();
-    });
+      const {
+        command = 'echo "Waiting..."',
+        output = "Waiting...",
+        title = "Terminal",
+      } = state.terminal_session;
+
+      // Update title if changed
+      const titleEl = document.getElementById("terminal-title");
+      if (titleEl && titleEl.innerText !== title) titleEl.innerText = title;
+
+      if (command !== prevCommand) {
+        // New command: clear and write entire context
+        terminal.reset();
+        terminal.write(`$ ${command}\r\n\r\n${output}\r\n`);
+        fitAddon.fit();
+        terminal.scrollToBottom();
+        prevCommand = command;
+        prevOutput = output;
+      } else if (output !== prevOutput) {
+        // Same command, output grew: append delta
+        const delta = output.startsWith(prevOutput)
+          ? output.slice(prevOutput.length)
+          : `\r\n${output}`; // fallback if something unexpected
+        terminal.write(delta);
+        fitAddon.fit();
+        terminal.scrollToBottom();
+        prevOutput = output;
+      }
+    }
+
+    // Initial render if state already present
+    handleState(get(agentState));
+
+    // Subscribe to future updates
+    agentState.subscribe(handleState);
   });
 </script>
 

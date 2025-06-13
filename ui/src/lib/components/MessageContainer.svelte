@@ -64,7 +64,7 @@
       <div class="flex items-start gap-2 px-2 py-4">
         {#if message.from_agent}
           <img
-            src="/assets/agent-avatar.png"
+            src="/assets/devika-avatar.png"
             alt="Agent's Avatar"
             class="w-8 h-8 rounded-full"
           />

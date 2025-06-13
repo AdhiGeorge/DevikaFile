@@ -30,11 +30,13 @@ import platform
 import tiktoken
 import asyncio
 import logging
-from src.llm.llm import LLM
-from src.utils.token_tracker import TokenTracker
+import re
+from src.services.terminal_runner import TerminalRunner
 from prometheus_client import Counter, Histogram, start_http_server
 from opentelemetry import trace
 from opentelemetry.trace import Status, StatusCode
+from src.llm.llm import LLM
+from src.utils.token_tracker import TokenTracker
 
 from src.socket_instance import emit_agent
 
@@ -156,7 +158,15 @@ class Agent:
             args = item["args"]
             reply = item["reply"]
 
-            self.project_manager.add_message_from_agent(project_name, reply)
+            # Filter out generic meta-responses like "Understood, please provide the plan..."
+            normalized_resp = reply.strip().lower()
+            is_meta_ack = (
+                normalized_resp.startswith("understood") and
+                ("provide the plan" in normalized_resp or "step by step" in normalized_resp)
+            )
+
+            if not is_meta_ack:
+                self.project_manager.add_message_from_agent(project_name, reply)
 
             if function == "git_clone":
                 url = args["url"]
@@ -216,24 +226,27 @@ class Agent:
 
         response, action = self.action.execute(conversation, project_name)
 
-        self.project_manager.add_message_from_agent(project_name, response)
+        # Filter out generic meta-responses like "Understood, please provide the plan..."
+        normalized_resp = response.strip().lower()
+        is_meta_ack = (
+            normalized_resp.startswith("understood") and
+            ("provide the plan" in normalized_resp or "step by step" in normalized_resp)
+        )
+
+        if not is_meta_ack:
+            self.project_manager.add_message_from_agent(project_name, response)
 
         print("\naction :: ", action, '\n')
 
         if action == "answer":
-            # Answer.execute expects (question, context, project_name)
-            response = self.answer.execute(conversation, code_markdown, project_name)
-            self.project_manager.add_message_from_agent(project_name, response)
+            # If the Action agent determined that the best step is to "answer",
+            # we already stored its detailed answer in `response` above. Avoid
+            # calling the Answer agent again, which was producing generic
+            # acknowledgements, leading to confusing duplicate messages.
+            pass  # no-op: detailed answer already sent
 
         elif action == "run":
-            project_path = self.project_manager.get_project_path(project_name)
-            self.runner.execute(
-                conversation=conversation,
-                code_markdown=code_markdown,
-                os_system=os_system,
-                project_path=project_path,
-                project_name=project_name
-            )
+            self._execute_last_snippet(project_name)
 
         elif action == "deploy":
             deploy_metadata = Netlify().deploy(project_name)
@@ -283,5 +296,94 @@ class Agent:
 
             self.project_manager.add_message_from_agent(project_name, response)
 
+        # --------------------------------------------------
+        # Fallback: detect if the user explicitly asked to run code but the
+        # Action agent did not emit a "run" decision. This check is performed
+        # *after* executing the chosen action so that it works even when the
+        # Action agent selects "answer" or another branch.
+        # --------------------------------------------------
+        if action != "run":
+            last_user_msg = self.project_manager.get_latest_message_from_user(project_name)
+            if last_user_msg:
+                txt = last_user_msg["message"].lower()
+                if any(kw in txt for kw in [
+                    "run the code", "execute the code", "run code",
+                    "execute code", "run the code you have generated",
+                    "run generated code"
+                ]):
+                    self._execute_last_snippet(project_name)
+
         self.agent_state.set_agent_active(project_name, False)
         self.agent_state.set_agent_completed(project_name, True)
+
+    # Helper to run last snippet
+    def _execute_last_snippet(self, project_name: str):
+        # Retrieve all messages for the project and scan backwards to find the
+        # most recent agent message that actually contains a code block.
+        messages = self.project_manager.get_messages(project_name) or []
+
+        code_snippet = ""
+        for message in reversed(messages):
+            if message.get("from_agent"):
+                code_snippet = self._extract_code_block(message.get("message", ""))
+                if code_snippet:
+                    break
+
+        if not code_snippet:
+            self.project_manager.add_message_from_agent(
+                project_name,
+                "I couldn't locate a code snippet to execute. Please generate some code first."
+            )
+            return
+
+        # Helper closure that pushes incremental output to the UI via AgentState
+        def _push_live(output_chunk: str):
+            try:
+                latest_state = (
+                    self.agent_state.get_latest_state(project_name) or self.agent_state.new_state()
+                )
+                terminal_session = latest_state.get("terminal_session", {})
+                terminal_session["command"] = "python -"
+                terminal_session["output"] = output_chunk
+                terminal_session["title"] = "Terminal"
+                latest_state["terminal_session"] = terminal_session
+                # Persist & broadcast live output
+                self.agent_state.update_latest_state(project_name, latest_state)
+            except Exception as exc:
+                logger.error(f"Live terminal push failed: {exc}")
+
+        runner = TerminalRunner(timeout=60)
+        exec_result = runner.run_stream(
+            ["python", "-"], input_text=code_snippet, on_update=_push_live
+        )
+
+        stdout = exec_result.get("stdout", "")
+        stderr = exec_result.get("stderr", "")
+        exit_code = exec_result.get("exit_code", -1)
+        duration = exec_result.get("duration", 0)
+
+        # Final state update to ensure last chunk is visible (in case no output)
+        _push_live(stdout if stdout else stderr)
+
+        formatted_output = (
+            f"Execution finished in {duration:.2f}s with exit code {exit_code}.\n\n"
+            f"STDOUT:\n{stdout if stdout else '[empty]'}\n\n"
+            f"STDERR:\n{stderr if stderr else '[empty]'}"
+        )
+
+        self.project_manager.add_message_from_agent(project_name, formatted_output)
+
+    # --------------------------------------------------
+    # Utility helpers
+    # --------------------------------------------------
+
+    def _extract_code_block(self, text: str) -> str:
+        """Return the first markdown code block found in *text* without the backticks.
+
+        Supports optional language spec after the opening backticks (e.g. ```python). If
+        no code block is found an empty string is returned."""
+        if not text:
+            return ""
+        pattern = r"```(?:[a-zA-Z0-9_]+\n)?(.*?)```"
+        match = re.search(pattern, text, re.DOTALL)
+        return match.group(1).strip() if match else ""

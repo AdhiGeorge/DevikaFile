@@ -5,12 +5,12 @@
 @layer base {
   :root {
     --primary: #2F3337;
-    --background: #ffffff;
-    --secondary: #f1f2f5;
-    --tertiary: #919AA3;
+    --background: transparent;
+    --secondary: rgba(255,255,255,0.05);
+    --tertiary: #A1A1AA;
 
-    --foreground: #303438;
-    --foreground-invert: #ffffff;
+    --foreground: #E5E7EB;
+    --foreground-invert: #1D1F21;
     --foreground-light: #9CA3AB;
     --foreground-secondary: #9CA3AB;
 
@@ -24,21 +24,29 @@
     
     --browser-window-dots: #E4E3E8;
     --browser-window-search: #F7F8FA;
-    --browser-window-ribbon: #ffffff;
-    --browser-window-foreground: #303438;
-    --browser-window-background: #F7F8FA;
+    --browser-window-ribbon: rgba(255,255,255,0.06);
+    --browser-window-foreground: #E5E7EB;
+    --browser-window-background: rgba(255,255,255,0.03);
     
     --terminal-window-dots: #E4E3E8;
-    --terminal-window-ribbon: #ffffff;
-    --terminal-window-background: #F7F8FA;
-    --terminal-window-foreground: #313336;
+    --terminal-window-ribbon: rgba(255,255,255,0.06);
+    --terminal-window-background: rgba(255,255,255,0.03);
+    --terminal-window-foreground: #E5E7EB;
 
     --slider-empty: #9CA3AB;
     --slider-filled: #2F3337;
     --slider-thumb: #303438;
 
-    --monologue-background: #F1F3F5;
-    --monologue-outline: #B2BAC2;
+    --monologue-background: rgba(255,255,255,0.04);
+    --monologue-outline: rgba(255,255,255,0.12);
+
+    /* Accent + vibrant palette */
+    --accent: #4f46e5; /* indigo-600 */
+    --accent-light: #818cf8;
+
+    --primary: var(--accent);
+    --slider-filled: var(--accent);
+    --slider-thumb: var(--accent-light);
   }
   .dark{
       --primary: #ECECEC;
@@ -83,8 +91,26 @@
   * {
     @apply border-border;
   }
+  /* Futuristic gradient backdrop */
   body {
-    @apply bg-background text-foreground;
+    @apply text-foreground;
+    background: linear-gradient(135deg, #09090b 0%, #111827 40%, #1e293b 100%);
+    min-height: 100dvh;
+    font-family: 'Inter', sans-serif;
+  }
+  
+  /* Glassmorphic widget styling */
+  .border-window-outline {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(14px);
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25);
+    transition: background 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .border-window-outline:hover {
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
   }
   
   /* Styling for scrollbar */
@@ -95,18 +121,18 @@
     height: 2px
   }
   *::-webkit-scrollbar-thumb {
-    background: #999797;
+    background: var(--accent-light);
     border-radius: 0.5rem;
   }
   *::-webkit-scrollbar-thumb:hover {
-    background: #6b7280;
+    background: var(--accent);
   } 
 
   /* firefox  */
   @-moz-document url-prefix() {
   :global(*) {
     scrollbar-width: thin;
-    scrollbar-color: #999797 #FFFFFF;
+    scrollbar-color: var(--accent) #FFFFFF;
   }
 
   :global(*::-moz-scrollbar) {
@@ -114,12 +140,12 @@
   }
 
   :global(*::-moz-scrollbar-thumb) {
-    background: #999797;
+    background: var(--accent-light);
     border-radius: 0.5rem;
   }
 
   :global(*::-moz-scrollbar-thumb:hover) {
-    background: #6b7280;
+    background: var(--accent);
   }
 }
 
@@ -128,10 +154,25 @@
     width: 5px;
   }
   :global(*::-ms-scrollbar-thumb) {
-    background: #999797;
+    background: var(--accent-light);
     border-radius: 0.5rem;
   }
   :global(*::-ms-scrollbar-thumb:hover) {
-    background: #6b7280;
+    background: var(--accent);
   }
+}
+
+/* CHAT MESSAGE BUBBLES */
+.message-bubble {
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.06);
+  color: var(--foreground);
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.08);
+}
+
+.message-bubble.user {
+  background: linear-gradient(135deg,var(--accent-light)10%,var(--accent)90%);
+  color:#fff;
 }

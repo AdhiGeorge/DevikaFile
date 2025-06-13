@@ -50,16 +50,22 @@
     const sanitizedMessage = DOMPurify.sanitize(messageInput);
     const escapedMessage = escapeHTML(sanitizedMessage);
 
+    // Only send if we have input and the agent is NOT currently processing another request
+    if (messageInput.trim() !== "" && escapedMessage.trim() !== "" && !$isSending) {
+      // Flip the sending flag so UI knows it is busy
+      isSending.set(true);
 
-    if (messageInput.trim() !== "" && escapedMessage.trim() !== "" && isSending) {
-      $isSending = true;
       emitMessage("user-message", {
         message: escapedMessage,
         base_model: selectedModel,
         project_name: projectName,
         search_engine: serachEngine,
       });
+
+      // Clear the textarea and reset token counter
       messageInput = "";
+      const counterEl = document.querySelector(".token-count");
+      if (counterEl) counterEl.textContent = 0;
     }
   }
   onMount(() => {
